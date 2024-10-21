@@ -1,0 +1,1 @@
+predict_multifeature_EURUSD_scalp60_100_v2: ['Close', 'Volume', 'RSI', 'MACD','SMA','MFI', 'ATR']
