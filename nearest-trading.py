@@ -9,11 +9,18 @@ import ta.volatility
 from joblib import load
 from datetime import timedelta
 import random
-import trading_utils 
+
+import ta.volume
 app = Flask(__name__) 
+
+
+login = 182893487  
+password = "Ducthinh@2109"
+server = 'Exness-MT5Trial6'
+
 # Khởi tạo MetaTrader 5 
 if not mt5.initialize():
-    print("Initialization failed")
+    print("Initialization failed",  mt5.last_error())
     mt5.shutdown()
     exit()
 
@@ -21,24 +28,51 @@ if not mt5.initialize():
 # password = "Ducthinh@2109" 
 # server = "Exness-MT5Real15" 
 
-login = 79364337  
-password = "Ducthinh@2109"
-server = 'Exness-MT5Trial8'
-
 symbol = "XAUUSD"   
 isReverse = False  
 
-  
+def calculate_shadow_top(row):
+    if row['close'] > row['open']:  # Nến tăng
+        return row['high'] - row['close']
+    else:  # Nến giảm
+        return row['high'] - row['open']
+
+def calculate_shadow_bottom(row):
+    if row['close'] > row['open']:  # Nến tăng
+        return row['open'] - row['low']
+    else:  # Nến giảm
+        return row['close'] - row['low']
+
+
 if not mt5.login(login=login, password=password, server=server):  
     print("Login failed")
     mt5.shutdown() 
     exit() 
- 
+
+# def create_segments(data, window_size, columns):
+#     return np.array([
+#         np.hstack([data[col].values[i:i + window_size] for col in columns])
+#         for i in range(len(data) - window_size + 1)
+#     ])
+
+def create_segments(data: pd.DataFrame, columns: list, window_size: int):
+    segments = []
+    num_rows = len(data)
+    for i in range(num_rows - window_size + 1):
+        segment_values = []
+        for col in columns:
+            # Lấy 15 giá trị liên tiếp của cột col
+            segment_values.extend(data[col].values[i:i + window_size])
+        segments.append(segment_values)
+    return np.array(segments)
+df_historical = pd.read_csv(f'./train-data/OANDA_XAUUSD_1m_Historical.csv')
 # # List of indicators
 # indicators = ['AO', 'TSI', 'RSI', 'PPO', 'STOCH_RSI', 'STOCH', 'UO', 'WR', 'ROC']
 
 # # Dictionary to store the models
 # models = {}
+
+nearest_neighbors = load('./nearest_neighbors_model.joblib')
 
 # # Loop to load models dynamically
 # for indicator in indicators:
@@ -46,40 +80,31 @@ if not mt5.login(login=login, password=password, server=server):
 #     models[indicator] = load(model_name)
 
 @app.route('/predict', methods=['POST'])
-def predict_next_price():
-    # Fetch historical rates
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 1)
+def predict_next_price(): 
+    round_num = 5
+    window_size = 15
+    columns = ['body']
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
     new_data = pd.DataFrame(rates)
-    new_data['body'] = new_data['close'] - new_data['open']
+    STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
+    RSI = ta.momentum.RSIIndicator(close=new_data['close'])
+    new_data["RSI"] = RSI.rsi()
+    new_data['stoch'] = STOCH.stoch()
+    new_data['body'] = np.round(new_data['close'] - new_data['open'], round_num)
+    new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
+    new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
+    new_data['Volume'] = new_data['tick_volume']
     
-    # new_data = trading_utils.processing_data(new_data=new_data)
+    new_segments = create_segments(data=new_data, window_size=window_size, columns=columns)[-1]
 
-    # features = []
+    distances, indices = nearest_neighbors.kneighbors([new_segments])
 
-    # lags = range(0, 10)
+    most_index = indices[0][0]
+    print(most_index, distances[0][0])
+    next_candle = df_historical.iloc[most_index + window_size : most_index + window_size + window_size]
+    is_buy = 1 if next_candle['body'].mean() > 0 else 0
 
-    # stoch = [f'STOCH_{i}' for i in lags]
-    # stoch_rsi = [f'STOCH_RSI_{i}' for i in lags]
-    # tsi = [f'TSI_{i}' for i in lags]
-    # rsi = [f'RSI_{i}' for i in lags]
-
-    # features += stoch 
-    # features += tsi
-    # features += rsi 
-    # features += stoch_rsi 
-     
-
-    latest_candle = new_data.iloc[-1]
-
-    # input_data = pd.DataFrame([latest_candle], columns=features)
-
-    # # signal = trading_utils.predict_nearest(window_size=1, new_data=new_data, df_historical=df_historical, model=model)
-    # y_pred = rf_classifier.predict(input_data)
-    # # Extracting the predicted value and converting it to an integer
-    # predicted_value = int(y_pred[0])  # Extract the first element from the prediction
-
-    return jsonify({'predicted_next_closing_price': 1, 'close': latest_candle['close'], 'volume': latest_candle['tick_volume'] })
-
+    return jsonify({'predicted_next_closing_price': is_buy}) 
 
 @app.route('/get-open', methods=['POST'])   
 def predict_next_price_v2():
