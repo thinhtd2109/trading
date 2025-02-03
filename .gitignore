@@ -1,3 +1,4 @@
 node_modules
 *.csv
 model_XAUUSD.pkl
+.env
