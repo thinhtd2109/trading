@@ -65,14 +65,14 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
             segment_values.extend(data[col].values[i:i + window_size])
         segments.append(segment_values)
     return np.array(segments)
-df_historical = pd.read_csv(f'./train-data/OANDA_XAUUSD_Historical.csv')
+# df_historical = pd.read_csv(f'./train-data/OANDA_XAUUSD_Historical.csv')
 # # List of indicators
 # indicators = ['AO', 'TSI', 'RSI', 'PPO', 'STOCH_RSI', 'STOCH', 'UO', 'WR', 'ROC']
 
 # # Dictionary to store the models
 # models = {}
 
-rf_classifier = load('./model_XAUUSD.pkl')
+# rf_classifier = load('./model_XAUUSD.pkl')
 
 # # Loop to load models dynamically
 # for indicator in indicators:
