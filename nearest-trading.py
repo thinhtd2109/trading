@@ -65,14 +65,14 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
             segment_values.extend(data[col].values[i:i + window_size])
         segments.append(segment_values)
     return np.array(segments)
-df_historical = pd.read_csv(f'./train-data/OANDA_XAUUSD_1m_Historical.csv')
+df_historical = pd.read_csv(f'./train-data/OANDA_XAUUSD_Historical.csv')
 # # List of indicators
 # indicators = ['AO', 'TSI', 'RSI', 'PPO', 'STOCH_RSI', 'STOCH', 'UO', 'WR', 'ROC']
 
 # # Dictionary to store the models
 # models = {}
 
-nearest_neighbors = load('./nearest_neighbors_model.joblib')
+rf_classifier = load('./model_XAUUSD.pkl')
 
 # # Loop to load models dynamically
 # for indicator in indicators:
@@ -81,30 +81,43 @@ nearest_neighbors = load('./nearest_neighbors_model.joblib')
 
 @app.route('/predict', methods=['POST'])
 def predict_next_price(): 
-    round_num = 5
-    window_size = 15
-    columns = ['body']
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
+
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 15)
     new_data = pd.DataFrame(rates)
+
+    # Calculate STOCH and other features
     STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
-    RSI = ta.momentum.RSIIndicator(close=new_data['close'])
-    new_data["RSI"] = RSI.rsi()
     new_data['stoch'] = STOCH.stoch()
-    new_data['body'] = np.round(new_data['close'] - new_data['open'], round_num)
+    
     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
-    new_data['Volume'] = new_data['tick_volume']
+    new_data['body'] = new_data['close'] - new_data['open']
+    new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
+    # Create lagged features
+    # lags = range(0, 15)
+    # features = []
+    # for col in ['body', 
+    #             'shadow_top', 
+    #             'shadow_bottom'
+    #     ]:
+    #     for lag in lags:
+    #         new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
+    #         features.append(f'{col}_{lag}')
     
-    new_segments = create_segments(data=new_data, window_size=window_size, columns=columns)[-1]
+    # # Drop NaNs
+    # new_data.dropna(inplace=True)
+    
+    # # Prepare latest data for prediction
+    # latest_data = new_data[features].iloc[-1].values.reshape(1, -1)
+    # next_movement = rf_classifier.predict(latest_data)
 
-    distances, indices = nearest_neighbors.kneighbors([new_segments])
+    count_negative = (new_data['body'] < 0).sum()
+    count_positive = (new_data['body'] > 0).sum()
 
-    most_index = indices[0][0]
-    print(most_index, distances[0][0])
-    next_candle = df_historical.iloc[most_index + window_size : most_index + window_size + window_size]
-    is_buy = 1 if next_candle['body'].mean() > 0 else 0
+    next_movement = 1 if count_positive > count_negative else 0
 
-    return jsonify({'predicted_next_closing_price': is_buy}) 
+    # return jsonify({'predicted_next_closing_price': int(next_movement[0])})
+    return jsonify({'predicted_next_closing_price': next_movement })
 
 @app.route('/get-open', methods=['POST'])   
 def predict_next_price_v2():
@@ -146,13 +159,11 @@ def export_csv():
 
 @app.route('/klines', methods=['GET'])
 def get_klines():
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 100)
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
     rates_frame = pd.DataFrame(rates)
-    # rates_frame['body'] = rates_frame['close'] - rates_frame['open']
-    # rates_frame['time'] = pd.to_datetime(rates_frame['time'], unit='s') + timedelta(hours=7)
-
-    # Định dạng lại thời gian theo ISO 8601 với múi giờ UTC+7
-    # rates_frame['time'] = rates_frame['time'].dt.strftime("%Y-%m-%dT%H:%M:%S+07:00")
+    rates_frame['shadow_top'] = rates_frame.apply(calculate_shadow_top, axis=1)
+    rates_frame['shadow_bottom'] = rates_frame.apply(calculate_shadow_bottom, axis=1)
+    rates_frame['body'] = rates_frame['close'] - rates_frame['open']
     rates_frame['body'] = rates_frame['close'] - rates_frame['open']
     rates_json = rates_frame.to_dict(orient='records') 
     # Return the prediction in JSON format
@@ -256,7 +267,35 @@ def close_position():
             mt5.order_send(close_request)
 
     return jsonify({'message': 'Close Position Successfully.', 'isClosePosition': isClosePosition, 'profit': profit }) 
-        
+
+@app.route('/update-position', methods=['POST'])
+def updatePosition():
+    data = request.get_json()
+    position_id = int(data['position_id'])
+    distance = 1
+    position = mt5.positions_get(ticket=position_id)
+    position = position[0]
+    if not position:
+        return jsonify({"error": "Position not found"}), 404
+    
+    price = position.price_open
+    if position.type == mt5.ORDER_TYPE_BUY:
+        sl_price = price - distance  # SL ở dưới giá Buy
+        tp_price = price + distance  # TP ở trên giá Buy
+    else:  # SELL
+        sl_price = price + distance  # SL ở trên giá Sell
+        tp_price = price - distance  # TP ở dưới giá Sell
+
+    modify_request = {
+        "action": mt5.TRADE_ACTION_SLTP,
+        "symbol": symbol,
+        "position": position_id,
+        "sl": sl_price,
+        "tp": tp_price,
+    }
+
+    mt5.order_send(modify_request)
+    return jsonify({'message': 'Updated Successfully.' })       
 
 @app.route('/trade', methods=['POST'])
 def trade():
@@ -265,13 +304,26 @@ def trade():
     isClosePosition = False
     side = mt5.ORDER_TYPE_BUY if data['side'] == 'BUY' else mt5.ORDER_TYPE_SELL
     positions = mt5.positions_get(symbol=symbol)     
-    if positions:
-        return jsonify({'message': 'Trade Successfully.', 'isClosePosition': isClosePosition })
+    tick = mt5.symbol_info_tick(symbol)
+    distance = float(data.get('distance', 1))
+    if side == mt5.ORDER_TYPE_BUY:
+        price = tick.ask
+        sl_price = price - distance  # SL ở dưới giá Buy
+        tp_price = price + distance  # TP ở trên giá Buy
+    else:  # SELL
+        price = tick.bid
+        sl_price = price + distance  # SL ở trên giá Sell
+        tp_price = price - distance  # TP ở dưới giá Sell
+
+    if positions is not None and len(positions) > 0:
+        return jsonify({'message': 'Trade Successfully.', 'position_id': positions[0].ticket })
     request_trade = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": lot,
         "type": side, 
+        # "sl": sl_price,          # Stop Loss
+        # "tp": tp_price,   
         "magic": 202003,
         "comment": "",
         "type_time": mt5.ORDER_TIME_GTC,
@@ -279,13 +331,14 @@ def trade():
     }
 
     result = mt5.order_send(request_trade)
+    position_id = result.order
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         return jsonify({
             "error": "Trade failed",
             "details": result._asdict()
         }), 500
 
-    return jsonify({'message': 'Trade Successfully.', 'isClosePosition': isClosePosition })
+    return jsonify({'message': 'Trade Successfully.', 'isClosePosition': isClosePosition, 'position_id': position_id })
 if __name__ == '__main__':
     try:
         app.run(host='0.0.0.0', port=5001, debug=True)

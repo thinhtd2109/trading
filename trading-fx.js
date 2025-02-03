@@ -15,7 +15,7 @@ async function tradingv2(count, times) {
     let predict = await axios.post(url, { start: 1 });
 
     let side = 'SELL';
-    if (predict.data.predicted_next_closing_price == 1) {
+    if (predict.data.predicted_next_closing_price == 0) {
         side = 'BUY'
     }
 
@@ -30,10 +30,20 @@ async function tradingv2(count, times) {
         side
     });
  
-    await axios.post(`http://localhost:5001/trade`, {
+    let order = await axios.post(`http://localhost:5001/trade`, {
         lot,
         side,
     });
+
+
+    // if (order.data.position_id) {
+    //     await axios.post(`http://localhost:5001/update-position`, {
+    //         position_id: order.data.position_id,
+    //         side,
+    //     });
+    // }
+
+   
     return true;
     //return bos_choch.data      
 
@@ -55,7 +65,7 @@ async function runMultipleTimes(interval, times, action) {
 
 //await tradingv2()
 cron.schedule('*/15 * * * *', async () => {
-    await delay(5000);
+    await delay(19000);
     await tradingv2()
 });     
               
