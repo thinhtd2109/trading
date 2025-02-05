@@ -72,7 +72,7 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
 # # Dictionary to store the models
 # models = {}
 
-# rf_classifier = load('./model_XAUUSD.pkl')
+rf_classifier = load('./model_XAUUSD.pkl')
 
 # # Loop to load models dynamically
 # for indicator in indicators:
@@ -94,30 +94,25 @@ def predict_next_price():
     new_data['body'] = new_data['close'] - new_data['open']
     new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
     # Create lagged features
-    # lags = range(0, 15)
-    # features = []
-    # for col in ['body', 
-    #             'shadow_top', 
-    #             'shadow_bottom'
-    #     ]:
-    #     for lag in lags:
-    #         new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
-    #         features.append(f'{col}_{lag}')
+    lags = range(0, 15)
+    features = []
+    for col in ['body', 
+                'shadow_top', 
+                'shadow_bottom'
+        ]:
+        for lag in lags:
+            new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
+            features.append(f'{col}_{lag}')
     
     # # Drop NaNs
-    # new_data.dropna(inplace=True)
+    new_data.dropna(inplace=True)
     
     # # Prepare latest data for prediction
-    # latest_data = new_data[features].iloc[-1].values.reshape(1, -1)
-    # next_movement = rf_classifier.predict(latest_data)
+    latest_data = pd.DataFrame([new_data[features].iloc[-1]], columns=features)
+    next_movement = rf_classifier.predict(latest_data)
 
-    count_negative = (new_data['body'] < 0).sum()
-    count_positive = (new_data['body'] > 0).sum()
-
-    next_movement = 1 if count_positive > count_negative else 0
-
-    # return jsonify({'predicted_next_closing_price': int(next_movement[0])})
-    return jsonify({'predicted_next_closing_price': next_movement })
+    return jsonify({'predicted_next_closing_price': int(next_movement[0])})
+    
 
 @app.route('/get-open', methods=['POST'])   
 def predict_next_price_v2():

@@ -14,7 +14,7 @@ async function tradingv2(count, times) {
     let predict = await axios.post(url, { start: 1 });
 
     let side = 'SELL';
-    if (predict.data.predicted_next_closing_price == 0) {
+    if (predict.data.predicted_next_closing_price == 1) {
         side = 'BUY'
     }
 
@@ -33,10 +33,9 @@ async function tradingv2(count, times) {
     return true; 
 
 }
-
 //await tradingv2()
 cron.schedule('*/15 * * * *', async () => {
-    await delay(19000);
+    await delay(15000);
     await tradingv2()
 });     
               
