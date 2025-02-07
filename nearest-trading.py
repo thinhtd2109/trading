@@ -11,6 +11,10 @@ from datetime import timedelta
 import random
 
 import ta.volume
+from tensorflow.keras.models import load_model
+
+# Load the model and scalers
+model = load_model('./predict_model_XAUUSD.h5')
 app = Flask(__name__) 
 
 
@@ -72,7 +76,7 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
 # # Dictionary to store the models
 # models = {}
 
-rf_classifier = load('./model_XAUUSD.pkl')
+# rf_classifier = load('./model_XAUUSD.pkl')
 
 # # Loop to load models dynamically
 # for indicator in indicators:
@@ -82,7 +86,7 @@ rf_classifier = load('./model_XAUUSD.pkl')
 @app.route('/predict', methods=['POST'])
 def predict_next_price(): 
 
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 15)
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
     new_data = pd.DataFrame(rates)
 
     # Calculate STOCH and other features
@@ -96,10 +100,7 @@ def predict_next_price():
     # Create lagged features
     lags = range(0, 15)
     features = []
-    for col in ['body', 
-                'shadow_top', 
-                'shadow_bottom'
-        ]:
+    for col in ['body', 'shadow_top',  'shadow_bottom']:
         for lag in lags:
             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
             features.append(f'{col}_{lag}')
@@ -108,10 +109,44 @@ def predict_next_price():
     new_data.dropna(inplace=True)
     
     # # Prepare latest data for prediction
-    latest_data = pd.DataFrame([new_data[features].iloc[-1]], columns=features)
-    next_movement = rf_classifier.predict(latest_data)
+    next_closing_price = model.predict(np.array(new_data[features].iloc[-1]).reshape(1, 1, len(features)))
 
-    return jsonify({'predicted_next_closing_price': int(next_movement[0])})
+    next_moving_price = 1 if next_closing_price[0, 0] > 0.5 else 0
+
+    return jsonify({'predicted_next_closing_price': next_moving_price })
+    
+# def predict_next_price(): 
+
+#     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 15)
+#     new_data = pd.DataFrame(rates)
+
+#     # Calculate STOCH and other features
+#     STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
+#     new_data['stoch'] = STOCH.stoch()
+    
+#     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
+#     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
+#     new_data['body'] = new_data['close'] - new_data['open']
+#     new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
+#     # Create lagged features
+#     lags = range(0, 15)
+#     features = []
+#     for col in ['body', 
+#                 'shadow_top', 
+#                 'shadow_bottom'
+#         ]:
+#         for lag in lags:
+#             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
+#             features.append(f'{col}_{lag}')
+    
+#     # # Drop NaNs
+#     new_data.dropna(inplace=True)
+    
+#     # # Prepare latest data for prediction
+#     latest_data = pd.DataFrame([new_data[features].iloc[-1]], columns=features)
+#     next_movement = rf_classifier.predict(latest_data)
+
+#     return jsonify({'predicted_next_closing_price': int(next_movement[0])})
     
 
 @app.route('/get-open', methods=['POST'])   

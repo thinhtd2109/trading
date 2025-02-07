@@ -35,7 +35,7 @@ async function tradingv2(count, times) {
 }
 //await tradingv2()
 cron.schedule('*/15 * * * *', async () => {
-    await delay(15000);
+    await delay(5000);
     await tradingv2()
 });     
-              
+    
