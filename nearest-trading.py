@@ -11,10 +11,10 @@ from datetime import timedelta
 import random
 
 import ta.volume
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import load_model # type: ignore
 
 # Load the model and scalers
-model = load_model('./predict_model_XAUUSD.h5')
+model = load_model('./predict_model_XAUUSD_v2.h5')
 app = Flask(__name__) 
 
 
@@ -32,7 +32,7 @@ if not mt5.initialize():
 # password = "Ducthinh@2109" 
 # server = "Exness-MT5Real15" 
 
-symbol = "XAUUSD"   
+symbol = "BTCUSD"   
 isReverse = False  
 
 def calculate_shadow_top(row):
@@ -84,6 +84,49 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
 #     models[indicator] = load(model_name)
 
 @app.route('/predict', methods=['POST'])
+# def predict_next_price():
+#     # Lấy dữ liệu từ MT5
+#     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
+#     new_data = pd.DataFrame(rates)
+    
+#     # Tính toán chỉ báo STOCH (và các chỉ số khác nếu cần)
+#     STOCH = ta.momentum.StochasticOscillator(
+#         close=new_data['close'], 
+#         high=new_data['high'], 
+#         low=new_data['low'], 
+#         fillna=True
+#     )
+#     new_data['stoch'] = STOCH.stoch()
+    
+#     # Tính toán các feature: shadow_top, shadow_bottom, body, volume_avg
+#     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
+#     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
+#     new_data['body'] = new_data['close'] - new_data['open']
+#     new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
+    
+#     # Tạo các lagged features cho các cột: body, shadow_top, shadow_bottom
+#     lags = range(0, 15)
+#     features = []
+#     for col in ['body', 'shadow_top', 'shadow_bottom']:
+#         for lag in lags:
+#             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
+#             features.append(f'{col}_{lag}')
+    
+#     # Loại bỏ các dòng chứa NaN do lag
+#     new_data.dropna(inplace=True)
+    
+#     # Chuẩn bị dữ liệu mới để dự đoán: sử dụng mẫu cuối cùng
+#     # Với mô hình MLP, input được xây dựng theo dạng (batch_size, time_step, số_features),
+#     # ở đây time_step = 1.
+#     x_input = new_data[features].iloc[-1].values.astype(np.float32)
+#     x_input = x_input.reshape(1, 1, len(features))
+    
+#     # Dự đoán với mô hình MLP đã huấn luyện
+#     prediction = model.predict(x_input)
+#     next_moving_price = 1 if prediction[0, 0] > 0.5 else 0
+    
+#     return jsonify({'predicted_next_closing_price': next_moving_price})
+
 def predict_next_price(): 
 
     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
