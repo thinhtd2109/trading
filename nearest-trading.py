@@ -14,7 +14,7 @@ import ta.volume
 from tensorflow.keras.models import load_model # type: ignore
 
 # Load the model and scalers
-model = load_model('./predict_model_XAUUSD_v2.h5')
+model = load_model('./predict_model_XAUUSD_v5.h5')
 app = Flask(__name__) 
 
 
@@ -32,7 +32,7 @@ if not mt5.initialize():
 # password = "Ducthinh@2109" 
 # server = "Exness-MT5Real15" 
 
-symbol = "BTCUSD"   
+symbol = "XAUUSD"   
 isReverse = False  
 
 def calculate_shadow_top(row):
