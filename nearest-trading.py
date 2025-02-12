@@ -14,7 +14,7 @@ import ta.volume
 from tensorflow.keras.models import load_model # type: ignore
 
 # Load the model and scalers
-model = load_model('./predict_model_XAUUSD_v5.h5')
+model = load_model('./predict_model_XAUUSD_v1.h5')
 app = Flask(__name__) 
 
 
