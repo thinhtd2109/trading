@@ -14,13 +14,13 @@ import ta.volume
 from tensorflow.keras.models import load_model # type: ignore
 
 # Load the model and scalers
-model = load_model('./predict_model_XAUUSD_v1.h5')
+model = load_model('./predict_model_XAUUSD_v3.h5')
 app = Flask(__name__) 
 
 
-login = 182893487  
+login = 103865038  
 password = "Ducthinh@2109"
-server = 'Exness-MT5Trial6'
+server = 'Exness-MT5Real15'
 
 # Khởi tạo MetaTrader 5 
 if not mt5.initialize():
@@ -84,79 +84,107 @@ def create_segments(data: pd.DataFrame, columns: list, window_size: int):
 #     models[indicator] = load(model_name)
 
 @app.route('/predict', methods=['POST'])
-# def predict_next_price():
-#     # Lấy dữ liệu từ MT5
+# def predict_next_price(): 
+
 #     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
 #     new_data = pd.DataFrame(rates)
-    
-#     # Tính toán chỉ báo STOCH (và các chỉ số khác nếu cần)
-#     STOCH = ta.momentum.StochasticOscillator(
-#         close=new_data['close'], 
-#         high=new_data['high'], 
-#         low=new_data['low'], 
-#         fillna=True
-#     )
+
+#     # Calculate STOCH and other features
+#     STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
 #     new_data['stoch'] = STOCH.stoch()
     
-#     # Tính toán các feature: shadow_top, shadow_bottom, body, volume_avg
 #     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
 #     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
 #     new_data['body'] = new_data['close'] - new_data['open']
 #     new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
-    
-#     # Tạo các lagged features cho các cột: body, shadow_top, shadow_bottom
+#     # Create lagged features
 #     lags = range(0, 15)
 #     features = []
-#     for col in ['body', 'shadow_top', 'shadow_bottom']:
+#     for col in ['body', 'shadow_top',  'shadow_bottom']:
 #         for lag in lags:
 #             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
 #             features.append(f'{col}_{lag}')
     
-#     # Loại bỏ các dòng chứa NaN do lag
+#     # # Drop NaNs
 #     new_data.dropna(inplace=True)
     
-#     # Chuẩn bị dữ liệu mới để dự đoán: sử dụng mẫu cuối cùng
-#     # Với mô hình MLP, input được xây dựng theo dạng (batch_size, time_step, số_features),
-#     # ở đây time_step = 1.
-#     x_input = new_data[features].iloc[-1].values.astype(np.float32)
-#     x_input = x_input.reshape(1, 1, len(features))
-    
-#     # Dự đoán với mô hình MLP đã huấn luyện
-#     prediction = model.predict(x_input)
-#     next_moving_price = 1 if prediction[0, 0] > 0.5 else 0
-    
-#     return jsonify({'predicted_next_closing_price': next_moving_price})
+#     # # Prepare latest data for prediction
+#     next_closing_price = model.predict(np.array(new_data[features].iloc[-1]).reshape(1, 1, len(features)))
 
-def predict_next_price(): 
+#     next_moving_price = 1 if next_closing_price[0, 0] > 0.5 else 0
 
+#     return jsonify({'predicted_next_closing_price': next_moving_price })
+    
+def predict_next_price():
+    # Lấy dữ liệu từ MT5
     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
     new_data = pd.DataFrame(rates)
-
-    # Calculate STOCH and other features
-    STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
-    new_data['stoch'] = STOCH.stoch()
-    
+    # Tính toán các feature: shadow_top, shadow_bottom, body
+    # Giả sử rằng calculate_shadow_top và calculate_shadow_bottom đã được định nghĩa
     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
     new_data['body'] = new_data['close'] - new_data['open']
-    new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
-    # Create lagged features
+    
+    # Tạo các lagged features cho các cột: body, shadow_top, shadow_bottom với lag từ 0 đến 14
     lags = range(0, 15)
-    features = []
-    for col in ['body', 'shadow_top',  'shadow_bottom']:
+    for col in ['body', 'shadow_top', 'shadow_bottom']:
         for lag in lags:
             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
-            features.append(f'{col}_{lag}')
     
-    # # Drop NaNs
+    # Loại bỏ các dòng chứa NaN do việc shift lag
     new_data.dropna(inplace=True)
     
-    # # Prepare latest data for prediction
-    next_closing_price = model.predict(np.array(new_data[features].iloc[-1]).reshape(1, 1, len(features)))
+    # Sắp xếp các feature theo đúng thứ tự khi tạo dataset cho LSTM:
+    # Mỗi sample có 15 bước thời gian, mỗi bước có 3 feature theo thứ tự: [body, shadow_top, shadow_bottom]
+    features_ordered = []
+    for lag in lags:
+        features_ordered.extend([f'body_{lag}', f'shadow_top_{lag}', f'shadow_bottom_{lag}'])
+    
+    # Lấy mẫu cuối cùng (mẫu mới nhất) từ data
+    x_input = new_data[features_ordered].iloc[-1].values.astype(np.float32)
+    # Chuyển đổi vector 45 phần tử thành ma trận (15, 3)
+    x_input = x_input.reshape(15, 3)
+    # Thêm dimension batch -> shape cuối cùng (1, 15, 3)
+    x_input = np.expand_dims(x_input, axis=0)
+    
+    # Dự đoán với mô hình LSTM đã huấn luyện
+    prediction = model.predict(x_input)
+    
+    # Áp dụng ngưỡng 0.5 cho phân loại nhị phân
+    next_moving_price = 1 if prediction[0, 0] > 0.5 else 0
+    
+    return jsonify({'predicted_next_closing_price': next_moving_price})
 
-    next_moving_price = 1 if next_closing_price[0, 0] > 0.5 else 0
+# def predict_next_price(): 
 
-    return jsonify({'predicted_next_closing_price': next_moving_price })
+#     rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 1, 100)
+#     new_data = pd.DataFrame(rates)
+
+#     # Calculate STOCH and other features
+#     STOCH = ta.momentum.StochasticOscillator(close=new_data['close'], high=new_data['high'], low=new_data['low'], fillna=True)
+#     new_data['stoch'] = STOCH.stoch()
+    
+#     new_data['shadow_top'] = new_data.apply(calculate_shadow_top, axis=1)
+#     new_data['shadow_bottom'] = new_data.apply(calculate_shadow_bottom, axis=1)
+#     new_data['body'] = new_data['close'] - new_data['open']
+#     new_data['volume_avg'] = new_data['tick_volume'].rolling(window=15).mean()
+#     # Create lagged features
+#     lags = range(0, 15)
+#     features = []
+#     for col in ['body', 'shadow_top',  'shadow_bottom']:
+#         for lag in lags:
+#             new_data[f'{col}_{lag}'] = new_data[col].shift(lag)
+#             features.append(f'{col}_{lag}')
+    
+#     # # Drop NaNs
+#     new_data.dropna(inplace=True)
+    
+#     # # Prepare latest data for prediction
+#     next_closing_price = model.predict(np.array(new_data[features].iloc[-1]).reshape(1, 1, len(features)))
+
+#     next_moving_price = 1 if next_closing_price[0, 0] > 0.5 else 0
+
+#     return jsonify({'predicted_next_closing_price': next_moving_price })
     
 # def predict_next_price(): 
 
